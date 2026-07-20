@@ -52,4 +52,4 @@ If you want to explore the codebase or spin up a local development server, follo
    ```bash
    npm run dev
 
-Built by- Isha❤️
+Built with Love- Isha❤️
