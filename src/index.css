@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: #f0f2f5;
+    --surface: rgba(255, 255, 255, 0.9);
+    --surface-card: rgba(255, 255, 255, 0.95);
+    --border: rgba(0, 0, 0, 0.07);
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --input-bg: rgba(0, 0, 0, 0.04);
+    --input-border: rgba(0, 0, 0, 0.1);
+  }
+  .dark {
+    --bg: #070b12;
+    --surface: rgba(255, 255, 255, 0.025);
+    --surface-card: rgba(255, 255, 255, 0.03);
+    --border: rgba(255, 255, 255, 0.06);
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #475569;
+    --input-bg: rgba(0, 0, 0, 0.4);
+    --input-border: rgba(255, 255, 255, 0.07);
+  }
+  * {
+    @apply box-border;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--bg);
+    color: var(--text-primary);
+    transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: none;
+}
+@keyframes continuousTicker {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+.ticker-inner {
+  animation: continuousTicker 40s linear infinite;
+  will-change: transform; 
+}
+.ticker-inner:hover {
+  animation-play-state: paused;
+}
+.btn-glow:hover {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+.card-hover {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-hover:hover {
+  transform: translate3d(0, -2px, 0);
+}
+.heatmap-cell {
+  transition: transform 0.15s ease-out, filter 0.15s ease-out;
+}
+.heatmap-cell:hover {
+  transform: scale3d(1.04, 1.04, 1);
+  filter: brightness(1.1);
+  z-index: 10;
+  position: relative;
+}
+.chat-bubble-user {
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-radius: 16px 16px 4px 16px;
+}
+.chat-bubble-ai {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 16px 4px;
+}
