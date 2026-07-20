@@ -51,5 +51,3 @@ If you want to explore the codebase or spin up a local development server, follo
 4. **Launch the app**
    ```bash
    npm run dev
-
-Built with Love- Isha❤️
