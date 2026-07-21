@@ -149,7 +149,10 @@ async function fetchFromUpstox(symbols) {
   if (!USE_UPSTOX) return null;
   
   try {
-    const instrumentKeys = symbols.map((ticker) => UPSTOX_SYMBOL_MAP[ticker] || ticker);
+    const instrumentKeys = symbols.map((ticker) => {
+      const mapped = UPSTOX_SYMBOL_MAP[ticker] || ticker;
+      return encodeURIComponent(mapped);
+    });
     
     // Chunk keys into max 15 per request to prevent 400 URL length errors
     const CHUNK_SIZE = 15;
@@ -161,7 +164,7 @@ async function fetchFromUpstox(symbols) {
     const mappedQuotes = {};
 
     for (const chunk of chunks) {
-      const keysParam = chunk.map(k => encodeURIComponent(k)).join(',');
+      const keysParam = chunk.join(',');
       const url = `${UPSTOX_BASE}/market-quote/quotes?instrument_key=${keysParam}`;
 
       const res = await fetch(url, {
@@ -199,19 +202,15 @@ async function fetchFromUpstox(symbols) {
  */
 export async function fetchRealQuotes(symbols) {
   if (!symbols || symbols.length === 0) return null;
-  // Prefer Upstox if configured, otherwise fallback to Yahoo
   if (USE_UPSTOX) {
     const upstoxQuotes = await fetchFromUpstox(symbols);
     if (upstoxQuotes && Object.keys(upstoxQuotes).length > 0) return upstoxQuotes;
   }
 
-  const upstoxTargetString = symbols
-    .map((ticker) => UPSTOX_SYMBOL_MAP[ticker] || `${ticker}.NS`)
-    .join(',');
-    
-  const requestEndpoint = `${UPSTOX_BASE}/market-quote/quotes?instrument_key=${encodeURIComponent(upstoxTargetString)}`;
-  const responseData = await fetchDirectFromUpstox(requestEndpoint);
-  if (!responseData?.quoteResponse?.result) return null;
+  if (USE_UPSTOX) {
+    return await fetchFromUpstox(symbols);
+  }
+  return null;
 
   const realTimeQuotesMatrix = {};
 
@@ -282,9 +281,9 @@ export async function fetchRealIndices() {
  * Builds candlestick coordinate matrices for charting rendering systems.
  */
 export async function fetchCandles(symbol, range = '1d', interval = '5m') {
-  const targetedUpstoxSymbol = UPSTOX_SYMBOL_MAP[symbol] || `${symbol}.NS`;
+  const targetedUpstoxSymbol = UPSTOX_SYMBOL_MAP[symbol] || symbol;
   const intervalKey = interval === '1d' ? 'day' : '5minute';
-  const analyticalChartEndpoint = `${UPSTOX_BASE}/market-quote/candles/${encodeURIComponent(targetedUpstoxSymbol)}/${intervalKey}`;
+  const analyticalChartEndpoint = `${UPSTOX_BASE}/market-quote/historical-candle/${encodeURIComponent(targetedUpstoxSymbol)}/${intervalKey}/2026-07-21`;
   
   const responseData = await fetchDirectFromUpstox(analyticalChartEndpoint);
   if (!responseData?.chart?.result?.[0]) return null;
