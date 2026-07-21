@@ -144,50 +144,50 @@ function normalizeQuotePayload(rawPayload) {
   };
 }
 
-// Adapter to fetch quotes from an Upstox-compatible endpoint.
+// Adapter to fetch quotes from Upstox (v2 market-quote with chunking)
 async function fetchFromUpstox(symbols) {
   if (!USE_UPSTOX) return null;
+  
   try {
-    const symbolList = symbols
-      .map((ticker) => UPSTOX_SYMBOL_MAP[ticker] || `${ticker}.NS`)
-      .join(',');
-    const url = `${UPSTOX_BASE.replace(/\/$/, '')}/market/quotes?symbols=${encodeURIComponent(symbolList)}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${UPSTOX_API_KEY}`,
-        Accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) {
-      console.warn('[Upstox] upstream responded with', res.status);
-      return null;
+    const instrumentKeys = symbols.map((ticker) => UPSTOX_SYMBOL_MAP[ticker] || ticker);
+    
+    // Chunk keys into max 15 per request to prevent 400 URL length errors
+    const CHUNK_SIZE = 15;
+    const chunks = [];
+    for (let i = 0; i < instrumentKeys.length; i += CHUNK_SIZE) {
+      chunks.push(instrumentKeys.slice(i, i + CHUNK_SIZE));
     }
 
-    const payload = await res.json();
-    const rows = Array.isArray(payload) ? payload : (payload.data || payload.quotes || []);
-    if (!rows || rows.length === 0) return null;
+    const mappedQuotes = {};
 
-    const mapped = {};
-    for (const row of rows) {
-      const upstreamSymbol = row.symbol || row.tradingsymbol || row.ticker;
-      if (!upstreamSymbol) continue;
-      const key = resolveInternalSymbolKey(upstreamSymbol);
-      if (!key) continue;
+    for (const chunk of chunks) {
+      const keysParam = chunk.map(k => encodeURIComponent(k)).join(',');
+      const url = `${UPSTOX_BASE}/market-quote/quotes?instrument_key=${keysParam}`;
 
-      mapped[key] = normalizeQuotePayload(row);
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${UPSTOX_API_KEY}`,
+          'Accept': 'application/json',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (res.ok) {
+        const payload = await res.json();
+        const quotesData = payload.data || {};
+
+        for (const [key, quoteObj] of Object.entries(quotesData)) {
+          const internalKey = resolveInternalSymbolKey(key);
+          if (internalKey) {
+            mappedQuotes[internalKey] = normalizeQuotePayload(quoteObj);
+          }
+        }
+      }
     }
 
-    if (Object.keys(mapped).length === 0) {
-      console.warn('[Upstox] fetch returned no valid symbols for', symbolList);
-      return null;
-    }
-
-    console.debug('[Upstox] fetched live quotes for', Object.keys(mapped));
-    return mapped;
+    return Object.keys(mappedQuotes).length > 0 ? mappedQuotes : null;
   } catch (err) {
-    console.warn('[Upstox] fetch failed:', err);
+    console.warn('[Upstox Fetch Exception]:', err);
     return null;
   }
 }
@@ -240,29 +240,42 @@ export async function fetchRealQuotes(symbols) {
  * @returns {Promise<object|null>} 
  */
 export async function fetchRealIndices() {
-  const compositeIndexSymbols = Object.values(INDEX_SYMBOLS).join(',');
-  const indexRequestEndpoint = `${UPSTOX_BASE}/market-quote/quotes?instrument_key=${encodeURIComponent(compositeIndexSymbols)}`;
+  if (!USE_UPSTOX) return null;
   
-  const responseData = await fetchDirectFromUpstox(indexRequestEndpoint);
-  if (!responseData?.quoteResponse?.result) return null;
+  const compositeKeys = Object.values(INDEX_SYMBOLS).map(k => encodeURIComponent(k)).join(',');
+  const indexEndpoint = `${UPSTOX_BASE}/market-quote/quotes?instrument_key=${compositeKeys}`;
+  
+  try {
+    const res = await fetch(indexEndpoint, {
+      headers: {
+        'Authorization': `Bearer ${UPSTOX_API_KEY}`,
+        'Accept': 'application/json',
+      },
+    });
 
-  const activeIndicesMatrix = {};
-  const indexLabelMappings = { NIFTY50: 'NIFTY 50', SENSEX: 'SENSEX', INDIAVIX: 'INDIA VIX' };
+    if (!res.ok) return null;
+    const payload = await res.json();
+    const data = payload.data || {};
 
-  for (const indexItem of responseData.quoteResponse.result) {
-    const internalIndexToken = REVERSE_INDEX_SYMBOLS[indexItem.symbol];
-    if (!internalIndexToken) continue;
+    const activeIndicesMatrix = {};
+    const indexLabelMappings = { NIFTY50: 'NIFTY 50', SENSEX: 'SENSEX', INDIAVIX: 'INDIA VIX' };
 
-    activeIndicesMatrix[internalIndexToken] = {
-      name: indexLabelMappings[internalIndexToken] || internalIndexToken,
-      value: indexItem.regularMarketPrice ?? 0,
-      prevClose: indexItem.regularMarketPreviousClose ?? 0,
-      change: indexItem.regularMarketChange ?? 0,
-      changePercent: indexItem.regularMarketChangePercent ?? 0,
-    };
+    for (const [key, item] of Object.entries(data)) {
+      const internalKey = REVERSE_INDEX_SYMBOLS[key];
+      if (!internalKey) continue;
+
+      activeIndicesMatrix[internalKey] = {
+        name: indexLabelMappings[internalKey] || internalKey,
+        value: item.last_price ?? 0,
+        prevClose: item.ohlc?.close ?? 0,
+        change: item.net_change ?? 0,
+        changePercent: item.percentage_change ?? 0,
+      };
+    }
+    return activeIndicesMatrix;
+  } catch (err) {
+    return null;
   }
-  
-  return activeIndicesMatrix;
 }
 
 /**
@@ -334,94 +347,94 @@ export async function fetchCandles(symbol, range = '1d', interval = '5m') {
 }
 
 export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate, onError = () => {}) {
-  if (!USE_UPSTOX_WS || !symbols || symbols.length === 0 || typeof window === 'undefined' || typeof window.WebSocket === 'undefined') {
+  if (!USE_UPSTOX || !symbols || symbols.length === 0 || typeof window === 'undefined') {
     return () => {};
   }
 
   let socket = null;
-  let reconnectHandle = null;
   let isClosed = false;
 
-  const connect = () => {
-    if (socket && (socket.readyState === window.WebSocket.OPEN || socket.readyState === window.WebSocket.CONNECTING)) {
-      return;
-    }
+  const connectV3 = async () => {
+    try {
+      // Step A: Request authorized single-use wss:// URI from Upstox V3 API
+      const authRes = await fetch('https://api.upstox.com/v3/feed/market-data-feed/authorize', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${UPSTOX_API_KEY}`,
+          'Accept': 'application/json',
+        },
+      });
 
-    socket = new window.WebSocket(UPSTOX_WS_URL);
+      if (!authRes.ok) {
+        throw new Error(`Upstox V3 Auth failed with status ${authRes.status}`);
+      }
 
-    socket.addEventListener('open', () => {
-      console.debug('[Upstox WS] connection opened');
-      const subscriptionPayload = {
-        action: 'subscribe',
-        mode: 'full',
-        instruments: symbols.map((ticker) => UPSTOX_SYMBOL_MAP[ticker] || `${ticker}.NS`),
-        feed_types: ['quote', 'ltp'],
-        ...(UPSTOX_WS_TOKEN ? { access_token: UPSTOX_WS_TOKEN } : {}),
-      };
-      socket.send(JSON.stringify(subscriptionPayload));
-    });
+      const authPayload = await authRes.json();
+      const authorizedWsUri = authPayload.data?.authorized_redirect_uri || authPayload.data?.authorizedRedirectUri;
 
-    socket.addEventListener('message', (event) => {
-      try {
-        const payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        const updates = Array.isArray(payload) ? payload : [payload];
-        console.debug('[Upstox WS] message received', updates.length, updates[0]?.instrument_key || updates[0]?.symbol);
+      if (!authorizedWsUri) {
+        throw new Error('No authorized redirect URI returned by Upstox.');
+      }
 
-        for (const item of updates) {
-          const instrumentKey = item?.instrument_key || item?.symbol || item?.tradingsymbol || item?.ticker || '';
-          const internalKey = resolveInternalSymbolKey(instrumentKey);
+      // Step B: Connect to the authorized wss:// socket URI
+      socket = new window.WebSocket(authorizedWsUri);
 
-          if (internalKey && item?.last_price != null) {
-            onQuoteUpdate?.(internalKey, normalizeQuotePayload(item));
-            continue;
+      socket.addEventListener('open', () => {
+        console.log('[Upstox V3] WebSockets Connected Successfully!');
+
+        const instrumentKeys = symbols.map((ticker) => UPSTOX_SYMBOL_MAP[ticker] || ticker);
+
+        const subRequest = {
+          guid: 'bulls_ai_session',
+          method: 'sub',
+          data: {
+            mode: 'full',
+            instrumentKeys: instrumentKeys,
+          },
+        };
+
+        socket.send(JSON.stringify(subRequest));
+      });
+
+      socket.addEventListener('message', (event) => {
+        try {
+          if (typeof event.data === 'string') {
+            const parsed = JSON.parse(event.data);
+            if (parsed.feeds) {
+              for (const [key, feed] of Object.entries(parsed.feeds)) {
+                const internalKey = resolveInternalSymbolKey(key);
+                if (internalKey && feed.ff?.ltpc?.ltp) {
+                  onQuoteUpdate?.(internalKey, normalizeQuotePayload(feed.ff.ltpc));
+                }
+              }
+            }
           }
-
-          if (internalKey && (item?.regularMarketPrice != null || item?.value != null)) {
-            onIndexUpdate?.(internalKey, {
-              value: item.value ?? item.regularMarketPrice ?? 0,
-              prevClose: item.prevClose ?? item.regularMarketPreviousClose ?? 0,
-              change: item.change ?? item.regularMarketChange ?? 0,
-              changePercent: item.changePercent ?? item.regularMarketChangePercent ?? 0,
-            });
-          }
+        } catch (err) {
+          onError(err);
         }
-      } catch (err) {
+      });
+
+      socket.addEventListener('error', (err) => {
+        console.warn('[Upstox V3 WS Error]:', err);
         onError(err);
-      }
-    });
+      });
 
-    socket.addEventListener('error', () => {
-      onError(new Error('Upstox websocket stream disconnected.'));
-      scheduleReconnect();
-    });
+      socket.addEventListener('close', () => {
+        if (!isClosed) {
+          setTimeout(connectV3, 5000); // Reconnect loop if dropped
+        }
+      });
 
-    socket.addEventListener('close', () => {
-      if (!isClosed) {
-        scheduleReconnect();
-      }
-    });
-  };
-
-  const clearReconnect = () => {
-    if (reconnectHandle) {
-      window.clearTimeout(reconnectHandle);
-      reconnectHandle = null;
+    } catch (err) {
+      console.error('[Upstox V3 Initialization Failed]:', err);
+      onError(err);
     }
   };
 
-  const scheduleReconnect = () => {
-    clearReconnect();
-    reconnectHandle = window.setTimeout(() => {
-      reconnectHandle = null;
-      if (!isClosed) connect();
-    }, 5000);
-  };
-
-  connect();
+  connectV3();
 
   return () => {
     isClosed = true;
-    clearReconnect();
     if (socket && socket.readyState === window.WebSocket.OPEN) {
       socket.close();
     }
