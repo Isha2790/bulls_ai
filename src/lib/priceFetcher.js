@@ -282,7 +282,7 @@ export async function fetchRealIndices() {
  */
 export async function fetchCandles(symbol, range = '1d', interval = '5m') {
   const targetedUpstoxSymbol = UPSTOX_SYMBOL_MAP[symbol] || symbol;
-  const intervalKey = interval === '1d' ? 'day' : '5minute';
+  const intervalKey = interval === '1d' ? 'day' : '1minute';
   const today = new Date().toISOString().split('T')[0];
 
   // Upstox V2 candles endpoint without extra /market-quote/ subpath

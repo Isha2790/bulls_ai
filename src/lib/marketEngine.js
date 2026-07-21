@@ -143,6 +143,8 @@ class MarketDataEngine {
           activeLiveNodeCount++;
         }
         this.isPipelineLive = activeLiveNodeCount > 0;
+      } else {
+        this.isPipelineLive = true;
       }
 
       if (realtimeIndicesResponse) {
@@ -172,8 +174,6 @@ class MarketDataEngine {
    * @private
    */
   async _synchronizeRealtimeDataStreams() {
-    // CRITICAL ENFORCEMENT: Guard background API polling sync actions against off-hour sessions
-    if (!checkIsMarketOpen()) return;
 
     if (this.isNetworkFetchActive) return; 
     this.isNetworkFetchActive = true;
