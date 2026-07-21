@@ -284,66 +284,24 @@ export async function fetchCandles(symbol, range = '1d', interval = '5m') {
   const targetedUpstoxSymbol = UPSTOX_SYMBOL_MAP[symbol] || symbol;
   const intervalKey = interval === '1d' ? 'day' : '5minute';
   const today = new Date().toISOString().split('T')[0];
-  const analyticalChartEndpoint = `${UPSTOX_BASE}/market-quote/historical-candle/${encodeURIComponent(targetedUpstoxSymbol)}/${intervalKey}/${today}`;
-  
+
+  // Upstox V2 candles endpoint without extra /market-quote/ subpath
+  const analyticalChartEndpoint = `https://api.upstox.com/v2/historical-candle/${encodeURIComponent(targetedUpstoxSymbol)}/${intervalKey}/${today}`;
+
   const responseData = await fetchDirectFromUpstox(analyticalChartEndpoint);
-  if (!responseData?.chart?.result?.[0]) return null;
+  if (!responseData?.data?.candles) return null;
 
-  const targetChartDataNode = responseData.chart.result[0];
-  const queryTimestampsArray = targetChartDataNode.timestamp;
-  const metricsQuoteLane = targetChartDataNode.indicators?.quote?.[0];
+  const candlesArray = responseData.data.candles;
 
-  if (!queryTimestampsArray || !metricsQuoteLane) return [];
-
-  const getSessionBoundsForIST = (referenceTimestamp = Date.now()) => {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      second: 'numeric',
-      hour12: false,
-    });
-
-    const parts = formatter.formatToParts(new Date(referenceTimestamp));
-    const dateParts = parts.reduce((acc, part) => {
-      if (part.type !== 'literal') acc[part.type] = Number(part.value);
-      return acc;
-    }, {});
-
-    const { year, month, day } = dateParts;
-    const utcMidnight = Date.UTC(year, month - 1, day, 0, 0, 0);
-    const istOffsetMs = 5.5 * 60 * 60 * 1000;
-    const istMidnightUtc = utcMidnight - istOffsetMs;
-    return {
-      start: istMidnightUtc + 9 * 60 * 60 * 1000,
-      end: istMidnightUtc + (15 * 60 + 30) * 60 * 1000,
-    };
-  };
-
-  const { start: sessionStart, end: sessionEnd } = getSessionBoundsForIST(queryTimestampsArray[0] * 1000);
-
-  const processedCandlesMatrix = [];
-
-  for (let stepIndex = 0; stepIndex < queryTimestampsArray.length; stepIndex++) {
-    const candleTime = queryTimestampsArray[stepIndex] * 1000;
-    if (candleTime < sessionStart || candleTime > sessionEnd) continue;
-    const baselineOpeningPrice = metricsQuoteLane.open?.[stepIndex];
-    // Safeguards coordinate parsing against erratic or null data fields inside historical lines
-    if (baselineOpeningPrice == null || metricsQuoteLane.close?.[stepIndex] == null) continue;
-
-    processedCandlesMatrix.push({
-      time: queryTimestampsArray[stepIndex] * 1000,
-      open: baselineOpeningPrice,
-      high: metricsQuoteLane.high?.[stepIndex] ?? baselineOpeningPrice,
-      low: metricsQuoteLane.low?.[stepIndex] ?? baselineOpeningPrice,
-      close: metricsQuoteLane.close[stepIndex],
-      volume: metricsQuoteLane.volume?.[stepIndex] || 0,
-    });
-  }
-  return processedCandlesMatrix;
+  // Upstox returns array format: [timestamp, open, high, low, close, volume, open_interest]
+  return candlesArray.map((c) => ({
+    time: new Date(c[0]).getTime(),
+    open: c[1],
+    high: c[2],
+    low: c[3],
+    close: c[4],
+    volume: c[5] || 0,
+  })).reverse();
 }
 
 export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate, onError = () => {}) {
