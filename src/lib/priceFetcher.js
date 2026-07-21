@@ -22,7 +22,7 @@ const UPSTOX_SYMBOL_MAP = Object.freeze({
   SUNPHARMA: 'NSE_EQ|SUNPHARMA', TITAN: 'NSE_EQ|TITAN', ULTRACEMCO: 'NSE_EQ|ULTRACEMCO', NESTLEIND: 'NSE_EQ|NESTLEIND',
   BAJFINANCE: 'NSE_EQ|BAJFINANCE', POWERGRID: 'NSE_EQ|POWERGRID', NTPC: 'NSE_EQ|NTPC', HCLTECH: 'NSE_EQ|HCLTECH',
   ONGC: 'NSE_EQ|ONGC', COALINDIA: 'NSE_EQ|COALINDIA', ADANIENT: 'NSE_EQ|ADANIENT', JSWSTEEL: 'NSE_EQ|JSWSTEEL',
-  TECHM: 'NSE_EQ|TECHM', 'M&M': 'NSE_EQ|M&M',
+  TECHM: 'NSE_EQ|TECHM', HEROMOTOCO: 'NSE_EQ|HEROMOTOCO',
 });
 
 const INDEX_SYMBOLS = Object.freeze({
@@ -283,7 +283,8 @@ export async function fetchRealIndices() {
 export async function fetchCandles(symbol, range = '1d', interval = '5m') {
   const targetedUpstoxSymbol = UPSTOX_SYMBOL_MAP[symbol] || symbol;
   const intervalKey = interval === '1d' ? 'day' : '5minute';
-  const analyticalChartEndpoint = `${UPSTOX_BASE}/market-quote/historical-candle/${encodeURIComponent(targetedUpstoxSymbol)}/${intervalKey}/2026-07-21`;
+  const today = new Date().toISOString().split('T')[0];
+  const analyticalChartEndpoint = `${UPSTOX_BASE}/market-quote/historical-candle/${encodeURIComponent(targetedUpstoxSymbol)}/${intervalKey}/${today}`;
   
   const responseData = await fetchDirectFromUpstox(analyticalChartEndpoint);
   if (!responseData?.chart?.result?.[0]) return null;
@@ -387,7 +388,7 @@ export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate,
           guid: 'bulls_ai_session',
           method: 'sub',
           data: {
-            mode: 'full',
+            mode: 'ltpc',
             instrumentKeys: instrumentKeys,
           },
         };

@@ -120,7 +120,7 @@ export default function SEBIDisclaimer() {
             onClick={handleAcknowledgeCompliance} 
             className="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs uppercase font-bold tracking-wider rounded-xl shadow-md shadow-emerald-950/20 hover:brightness-105 transition-all duration-200"
           >
-            Confirm Framework Acknowledgment
+            Okay, I Understand 
           </button>
         </div>
 

@@ -211,13 +211,13 @@ export const KNOWLEDGE_BASE = Object.freeze([
     title: 'Tech Mahindra',
     content: "Tech Mahindra is an IT services company specializing in telecom, networking, and enterprise solutions. Revenue ~$6B. Key drivers: 5G rollout deals, communications vertical recovery, and digital transformation services. Sensitive to telecom client capex, BFSI diversification progress, and margin improvement. Sector: IT. Index: NIFTY 50, NIFTY IT." 
   },
-  { 
-    id: 'mahindra', 
+  {
+    id: 'heromotoco', 
     type: 'stock', 
-    symbol: 'M&M', 
-    title: 'Mahindra & Mahindra',
-    content: "Mahindra & Mahindra is a diversified automobile company, leading in tractors, UVs, and commercial vehicles. Key drivers: rural demand (tractors), SUV market share (XUV, Scorpio), and electric vehicle strategy. Sensitive to rural demand, commodity prices, and passenger vehicle competition. Sector: Automobile. Index: NIFTY 50, NIFTY Auto." 
-  },
+    symbol: 'HEROMOTOCO', 
+    title: 'Hero MotoCorp',
+    content: "Hero MotoCorp is the world's largest manufacturer of two-wheelers, leading in entry and executive segment motorcycles. Key drivers: rural demand, premiumization strategy (Harley-Davidson partnership, Mavrick), and EV transition (VIDA brand). Sensitive to rural sentiment, monsoon health, and raw material costs. Sector: Automobile. Index: NIFTY 50, NIFTY Auto." 
+},
   { 
     id: 'sector-it', 
     type: 'sector', 

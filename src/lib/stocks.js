@@ -28,7 +28,7 @@ export const STOCKS = Object.freeze([
   { symbol: 'ADANIENT', name: 'Adani Enterprises', sector: 'Infrastructure', basePrice: 3120.50 },
   { symbol: 'JSWSTEEL', name: 'JSW Steel', sector: 'Materials', basePrice: 945.30 },
   { symbol: 'TECHM', name: 'Tech Mahindra', sector: 'IT', basePrice: 1665.40 },
-  { symbol: 'M&M', name: 'Mahindra & Mahindra', sector: 'Automobile', basePrice: 2945.60 }
+  { symbol: 'HEROMOTOCO', name: 'Hero MotoCorp', sector: 'Automobile', basePrice: 5320.40 }
 ]);
 
 export const SECTORS = Object.freeze(
