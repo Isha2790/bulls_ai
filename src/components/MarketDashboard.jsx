@@ -3,7 +3,8 @@ import MiniSparkline from './MiniSparkline.jsx';
 import { Star, Search, TrendingUp, TrendingDown, ArrowUpDown } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext.jsx';
 import { fmtINR } from '../lib/marketEngine.js';
-
+import { checkIsMarketOpen } from '../lib/marketGuard.js';
+ 
 function formatVolumeMetric(volumeValue) {
   if (!volumeValue || isNaN(volumeValue)) return '—';
   if (volumeValue >= 1e7) return (volumeValue / 1e7).toFixed(2) + 'Cr';
@@ -11,7 +12,7 @@ function formatVolumeMetric(volumeValue) {
   if (volumeValue >= 1e3) return (volumeValue / 1e3).toFixed(1) + 'K';
   return String(volumeValue);
 }
-
+ 
 const TelemetrySummaryCard = React.memo(({ label, value, valueClass = '', icon, isDark }) => (
   <div 
     className={`rounded-xl p-4 border shadow-sm select-none transition-all duration-150 ${
@@ -29,20 +30,20 @@ const TelemetrySummaryCard = React.memo(({ label, value, valueClass = '', icon, 
     </div>
   </div>
 ));
-
+ 
 TelemetrySummaryCard.displayName = 'TelemetrySummaryCard';
-
+ 
 /**
  * Standardized High-Performance Dashboard Asset Row Component
  */
 const DashboardAssetRow = React.memo(({ quote, isWatched, onToggleWatch, onSelect, isDark }) => {
   const isPositiveYield = quote.changePercent >= 0;
-
+ 
   // Memoizes candle cutting array mutations to protect memory spaces from loops drops
   const subsetCandles = useMemo(() => {
     return quote.candles ? quote.candles.slice(-20) : [];
   }, [quote.candles]);
-
+ 
   return (
     <tr 
       onClick={onSelect} 
@@ -109,9 +110,9 @@ const DashboardAssetRow = React.memo(({ quote, isWatched, onToggleWatch, onSelec
     </tr>
   );
 });
-
+ 
 DashboardAssetRow.displayName = 'DashboardAssetRow';
-
+ 
 /**
  * Master Market Dashboard Data Table & Aggregator Subsystem Component
  */
@@ -123,7 +124,7 @@ export default function MarketDashboard({ quotes, watchlist = [], onToggleWatch,
   const [sortingKeyParameter, setSortingKeyParameter] = useState('changePercent');
   const [sortingDirectionFlag, setSortingDirectionFlag] = useState('desc'); // 'asc' | 'desc'
   const [activeFilterSegment, setActiveFilterSegment] = useState('all'); // 'all' | 'gainers' | 'losers' | 'watchlist'
-
+ 
   // Filtering & Analytical Aggregator Matrices (Memoized)
   const processedFilteredCollection = useMemo(() => {
     if (!quotes) return [];
@@ -150,26 +151,21 @@ export default function MarketDashboard({ quotes, watchlist = [], onToggleWatch,
     
     return initialQuotesList;
   }, [quotes, searchQuery, sortingKeyParameter, sortingDirectionFlag, activeFilterSegment, watchlist]);
-
+ 
   const compositeMarketStatsMatrix = useMemo(() => {
     if (!quotes) return { gainers: 0, losers: 0, avgChange: 0 };
     const globalQuotesArray = Array.from(quotes.values());
     if (globalQuotesArray.length === 0) return { gainers: 0, losers: 0, avgChange: 0 };
-
+ 
     return {
       gainers: globalQuotesArray.filter((asset) => asset.changePercent > 0).length,
       losers: globalQuotesArray.filter((asset) => asset.changePercent < 0).length,
       avgChange: globalQuotesArray.reduce((acc, asset) => acc + asset.changePercent, 0) / globalQuotesArray.length
     };
   }, [quotes]);
-
-  const compiledPipelineStatus = useMemo(() => {
-    if (!quotes || quotes.size === 0) return 'SIM';
-    const globalQuotesList = Array.from(quotes.values());
-    const onlineStreamNodes = globalQuotesList.filter((asset) => asset.isLive).length;
-    return onlineStreamNodes > globalQuotesList.length / 2 ? 'LIVE' : 'SIM';
-  }, [quotes]);
-
+ 
+  const compiledPipelineStatus = checkIsMarketOpen() ? 'LIVE' : '---';
+ 
   // Interactive Column Sorting Handlers Callback
   const triggerSortTransformation = useCallback((targetKey) => {
     setSortingKeyParameter((currentKey) => {
@@ -182,7 +178,7 @@ export default function MarketDashboard({ quotes, watchlist = [], onToggleWatch,
       }
     });
   }, []);
-
+ 
   // Reusable Sorting Header Column Layout Injector Component
   const SortHeader = ({ targetKey, titleLabel, alignmentStyle = '' }) => (
     <th 
@@ -201,9 +197,9 @@ export default function MarketDashboard({ quotes, watchlist = [], onToggleWatch,
       </span>
     </th>
   );
-
+ 
   const cardBorderContainerStyles = isDark ? 'bg-zinc-950/40 border-zinc-900' : 'bg-white border-slate-200';
-
+ 
   return (
     <div className="space-y-4">
       
@@ -227,7 +223,7 @@ export default function MarketDashboard({ quotes, watchlist = [], onToggleWatch,
           isDark={isDark} 
         />
       </div>
-
+ 
       {/* Operational Filter Action Controls Header Row */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -261,7 +257,7 @@ export default function MarketDashboard({ quotes, watchlist = [], onToggleWatch,
           ))}
         </div>
       </div>
-
+ 
       {/* Primary Data Display Matrix Core Grid Frame */}
       <div className={`rounded-2xl overflow-hidden border shadow-sm transition-all duration-200 ${cardBorderContainerStyles}`}>
         <div className="overflow-x-auto">
@@ -299,7 +295,7 @@ export default function MarketDashboard({ quotes, watchlist = [], onToggleWatch,
           </div>
         )}
       </div>
-
+ 
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 /**
  * Standardized Cross-Origin Resource Sharing (CORS) Security Headers
  * Configured for secure access control across enterprise client requests.
+ * GROQ_API_KEY=groq_api_key
  */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
