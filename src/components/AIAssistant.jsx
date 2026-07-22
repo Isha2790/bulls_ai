@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Sparkles, Send, X, Bot, User, BookOpen, AlertCircle } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext.jsx';
 import { generateRAGResponse } from '../lib/ragGenerator.js';
-
-const PLATFORM_GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
-
+ 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const AI_CHAT_ENDPOINT = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/ai-chat` : '';
+ 
 const ChatMessageBubble = React.memo(({ message, isDark, onSuggestionClick }) => {
   const isUserRole = message.role === 'user';
   
@@ -39,7 +41,7 @@ const ChatMessageBubble = React.memo(({ message, isDark, onSuggestionClick }) =>
             ))}
           </div>
         )}
-
+ 
         {/* Action Suggestion Micro-Buttons Block */}
         {message.suggestions && (
           <div className="mt-3 space-y-1.5 select-none">
@@ -60,9 +62,9 @@ const ChatMessageBubble = React.memo(({ message, isDark, onSuggestionClick }) =>
     </div>
   );
 });
-
+ 
 ChatMessageBubble.displayName = 'ChatMessageBubble';
-
+ 
 /**
  * Master AI Market Analysis Copilot Drawer Subsystem Component
  */
@@ -81,7 +83,7 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
   const [isLocalFallbackActive, setIsLocalFallbackActive] = useState(false);
   
   const viewportScrollContainerRef = useRef(null);
-
+ 
   // Synchronizes container bounds scrolling parameters on dynamic text extensions
   useEffect(() => {
     if (viewportScrollContainerRef.current) {
@@ -89,13 +91,13 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
       scrollNode.scrollTop = scrollNode.scrollHeight;
     }
   }, [conversationalHistory, isTypingStreamActive]);
-
+ 
   // Context Building Parser Pipeline
   const compiledAssetContextMatrix = useMemo(() => {
     if (!selectedStock || !quotes) return null; 
     const targetQuoteNode = quotes.get(selectedStock); 
     if (!targetQuoteNode) return null;
-
+ 
     return {
       symbol: targetQuoteNode.symbol,
       name: targetQuoteNode.name,
@@ -107,70 +109,59 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
       change: targetQuoteNode.changePercent.toFixed(2),
       volume: targetQuoteNode.volume.toLocaleString('en-IN'),
       vwap: targetQuoteNode.vwap.toFixed(2),
+      low52: targetQuoteNode.low52?.toFixed?.(2) ?? targetQuoteNode.low52,
+      high52: targetQuoteNode.high52?.toFixed?.(2) ?? targetQuoteNode.high52,
       sector: targetQuoteNode.sector
     };
   }, [selectedStock, quotes]);
-
+ 
   // Streaming Message Transmission Dispatcher Pipeline
   const processMessageTransmission = useCallback(async () => {
     const textSnapshot = userInputField.trim();
     if (!textSnapshot || isTypingStreamActive) return;
-
+ 
     // Stages user prompts safely inside historical indices lists
     setConversationalHistory((prev) => [...prev, { role: 'user', text: textSnapshot }]);
     setUserInputField('');
     setIsTypingStreamActive(true);
     setIsLocalFallbackActive(false);
-
+ 
     let compositeAccumulatedTextStr = '';
-
+ 
     try {
-      if (!PLATFORM_GROQ_API_KEY) {
-        throw new Error('Groq authorization signatures absent: Routing fallback pipelines.');
+      if (!AI_CHAT_ENDPOINT) {
+        throw new Error('AI chat endpoint not configured: Routing fallback pipelines.');
       }
-
-      const streamServerlessResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+ 
+      const streamServerlessResponse = await fetch(AI_CHAT_ENDPOINT, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${PLATFORM_GROQ_API_KEY}`, 
-          'Content-Type': 'application/json' 
+        headers: {
+          'Content-Type': 'application/json',
+          ...(SUPABASE_ANON_KEY ? { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY } : {}),
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { 
-              role: 'system', 
-              content: `You are an AI financial market analyst for an Indian stock trading platform called Bull's AI. ${
-                compiledAssetContextMatrix 
-                  ? `Current stock focus: ${compiledAssetContextMatrix.symbol} (${compiledAssetContextMatrix.name}), Spot Rate: ₹${compiledAssetContextMatrix.price}, Delta: ${compiledAssetContextMatrix.change}%, Sector: ${compiledAssetContextMatrix.sector}` 
-                  : 'No specific asset selected.'
-              } When the user asks about buying or investing, analyze the past performance context, current live market structure, and potential future catalysts or risks. Provide a reasoned, conditional view rather than an absolute buy/sell recommendation. Always include a compliance disclaimer that this is not investment advice. Be highly concise, deploy Indian formatting notation conventions (₹), focus directly on NSE/BSE metrics. Never guarantee speculative profit parameters. Keep summaries under 150 words.` 
-            },
-            { role: 'user', content: textSnapshot },
-          ],
-          stream: true,
-          max_tokens: 512,
-          temperature: 0.5,
+          message: textSnapshot,
+          stockContext: compiledAssetContextMatrix,
         }),
       });
-
+ 
       if (!streamServerlessResponse.ok) throw new Error(`API response status breach: ${streamServerlessResponse.status}`);
-
+ 
       const responseByteStreamReader = streamServerlessResponse.body.getReader();
       const stringDataDecoder = new TextDecoder();
       let residualBufferString = '';
-
+ 
       // Set up placeholder array block for incoming chunk decodes
       setConversationalHistory((prev) => [...prev, { role: 'ai', text: '', streaming: true }]);
-
+ 
       while (true) {
         const { done: isStreamComplete, value: networkChunkBytes } = await responseByteStreamReader.read();
         if (isStreamComplete) break;
-
+ 
         residualBufferString += stringDataDecoder.decode(networkChunkBytes, { stream: true });
         const textualLinesArray = residualBufferString.split('\n');
         residualBufferString = textualLinesArray.pop() || '';
-
+ 
         for (const dataLine of textualLinesArray) {
           const strippedLine = dataLine.trim();
           if (strippedLine.startsWith('data: ')) {
@@ -198,7 +189,7 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
           }
         }
       }
-
+ 
       if (!compositeAccumulatedTextStr) throw new Error('Void message payload resolved from network gateways.');
       
       // Seals streaming tokens cleanly into standard state maps
@@ -210,9 +201,9 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
         };
         return updatedHistoryBasket;
       });
-
+ 
     } catch (pipelineExceptionError) {
-
+ 
       // LOCAL RAG INTERCEPT FALLBACK LAYER
       setIsLocalFallbackActive(true);
       const localizedRAGExtractionResult = generateRAGResponse(textSnapshot, quotes);
@@ -234,11 +225,11 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
       setIsTypingStreamActive(false);
     }
   }, [userInputField, isTypingStreamActive, compiledAssetContextMatrix, quotes]);
-
+ 
   const handleSuggestionClick = useCallback((txt) => {
     setUserInputField(txt);
   }, []);
-
+ 
   if (!isOpen) return null;
   const drawerPanelBorderStyles = isDark ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-slate-200';
   return (
@@ -283,7 +274,7 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
             <X className="w-4 h-4" />
           </button>
         </div>
-
+ 
         {/* Dynamic Chat Dialog Viewport Canvas Lane */}
         <div ref={viewportScrollContainerRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3 scroll-smooth">
           {conversationalHistory.map((msg, index) => (
@@ -315,7 +306,7 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
             </div>
           )}
         </div>
-
+ 
         {/* Fallback Warning Message Banner */}
         {isLocalFallbackActive && (
           <div className={`px-4 py-2 flex items-center gap-2 text-[11px] border-t border-b font-mono font-bold select-none ${
@@ -325,7 +316,7 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
             <span>LLM latency fallback: RAG contextual indexing operational.</span>
           </div>
         )}
-
+ 
         {/* Prompt History Shortcuts Selector Panel */}
         {conversationalHistory.length <= 1 && (
           <div className="px-4 pb-2 space-y-1.5 select-none animate-fade-in">
@@ -344,7 +335,7 @@ export default function AIAssistant({ quotes, isOpen, onClose, currentTab, curre
             ))}
           </div>
         )}
-
+ 
         {/* Terminal Input Dispatches Action Controls Bar Container */}
         <div className={`p-3 border-t select-none ${isDark ? 'border-zinc-900 bg-zinc-900/10' : 'border-slate-100 bg-slate-50/20'}`}>
           <div className={`flex items-center gap-2 rounded-xl border transition-all duration-150 ${
