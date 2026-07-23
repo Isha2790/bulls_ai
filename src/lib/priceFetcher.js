@@ -10,6 +10,142 @@
  * the proxy), then cache the result in localStorage for 24h.
  */
  
+import protobuf from 'protobufjs';
+ 
+// The official Upstox Market Data Feed V3 schema, fetched directly from
+// https://assets.upstox.com/feed/market-data-feed/v3/MarketDataFeed.proto
+// (this is Upstox's own live schema URL, not a third-party guess/mirror).
+const UPSTOX_V3_PROTO_SOURCE = `
+syntax = "proto3";
+package com.upstox.marketdatafeederv3udapi.rpc.proto;
+ 
+message LTPC {
+  double ltp = 1;
+  int64 ltt = 2;
+  int64 ltq = 3;
+  double cp = 4;
+}
+ 
+message MarketLevel {
+  repeated Quote bidAskQuote = 1;
+}
+ 
+message MarketOHLC {
+  repeated OHLC ohlc = 1;
+}
+ 
+message Quote {
+  int64 bidQ = 1;
+  double bidP = 2;
+  int64 askQ = 3;
+  double askP = 4;
+}
+ 
+message OptionGreeks {
+  double delta = 1;
+  double theta = 2;
+  double gamma = 3;
+  double vega = 4;
+  double rho = 5;
+}
+ 
+message OHLC {
+  string interval = 1;
+  double open = 2;
+  double high = 3;
+  double low = 4;
+  double close = 5;
+  int64 vol = 6;
+  int64 ts = 7;
+}
+ 
+enum Type {
+  initial_feed = 0;
+  live_feed = 1;
+  market_info = 2;
+}
+ 
+message MarketFullFeed {
+  LTPC ltpc = 1;
+  MarketLevel marketLevel = 2;
+  OptionGreeks optionGreeks = 3;
+  MarketOHLC marketOHLC = 4;
+  double atp = 5;
+  int64 vtt = 6;
+  double oi = 7;
+  double iv = 8;
+  double tbq = 9;
+  double tsq = 10;
+}
+ 
+message IndexFullFeed {
+  LTPC ltpc = 1;
+  MarketOHLC marketOHLC = 2;
+}
+ 
+message FullFeed {
+  oneof FullFeedUnion {
+    MarketFullFeed marketFF = 1;
+    IndexFullFeed indexFF = 2;
+  }
+}
+ 
+message FirstLevelWithGreeks {
+  LTPC ltpc = 1;
+  Quote firstDepth = 2;
+  OptionGreeks optionGreeks = 3;
+  int64 vtt = 4;
+  double oi = 5;
+  double iv = 6;
+}
+ 
+message Feed {
+  oneof FeedUnion {
+    LTPC ltpc = 1;
+    FullFeed fullFeed = 2;
+    FirstLevelWithGreeks firstLevelWithGreeks = 3;
+  }
+  RequestMode requestMode = 4;
+}
+ 
+enum RequestMode {
+  ltpc = 0;
+  full_d5 = 1;
+  option_greeks = 2;
+  full_d30 = 3;
+}
+ 
+enum MarketStatus {
+  PRE_OPEN_START = 0;
+  PRE_OPEN_END = 1;
+  NORMAL_OPEN = 2;
+  NORMAL_CLOSE = 3;
+  CLOSING_START = 4;
+  CLOSING_END = 5;
+}
+ 
+message MarketInfo {
+  map<string, MarketStatus> segmentStatus = 1;
+}
+ 
+message FeedResponse {
+  Type type = 1;
+  map<string, Feed> feeds = 2;
+  int64 currentTs = 3;
+  MarketInfo marketInfo = 4;
+}
+`;
+ 
+let cachedFeedResponseType = null;
+function getFeedResponseType() {
+  if (cachedFeedResponseType) return cachedFeedResponseType;
+  const parsedRoot = protobuf.parse(UPSTOX_V3_PROTO_SOURCE).root;
+  cachedFeedResponseType = parsedRoot.lookupType(
+    'com.upstox.marketdatafeederv3udapi.rpc.proto.FeedResponse'
+  );
+  return cachedFeedResponseType;
+}
+ 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const PROXY_ENDPOINT = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/upstox-proxy` : '';
@@ -82,6 +218,27 @@ function normalizeQuotePayload(rawPayload) {
     fiftyTwoWeekLow: rawPayload['52_week_low'] ?? rawPayload.fiftyTwoWeekLow ?? 0,
     circuitUpper: rawPayload.upper_circuit_limit ?? 0,
     circuitLower: rawPayload.lower_circuit_limit ?? 0,
+  };
+}
+ 
+/**
+ * Upstox's WebSocket V3 "ltpc" mode sends a much smaller payload than the REST
+ * quotes response - just { ltp, ltt, ltq, cp } per the official LTPC message
+ * in MarketDataFeed.proto. `cp` is the previous day's close (same meaning as
+ * `ohlc.close` in the REST response).
+ */
+function normalizeLtpcPayload(ltpc, fallback = {}) {
+  const price = ltpc.ltp ?? fallback.price ?? 0;
+  const prevClose = ltpc.cp ?? fallback.prevClose ?? 0;
+  const change = price - prevClose;
+  const changePercent = prevClose ? (change / prevClose) * 100 : 0;
+ 
+  return {
+    ...fallback,
+    price: Number(price) || 0,
+    prevClose: Number(prevClose) || fallback.prevClose || 0,
+    change: Number(change) || 0,
+    changePercent: Number(changePercent) || 0,
   };
 }
  
@@ -318,6 +475,7 @@ export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate,
       }
  
       socket = new window.WebSocket(authorizedWsUri);
+      socket.binaryType = 'arraybuffer'; // Upstox V3 always sends binary Protobuf frames - without this the browser delivers a Blob, which can't be decoded synchronously here.
  
       socket.addEventListener('open', () => {
         console.log('[Upstox V3] WebSocket connected successfully!');
@@ -328,33 +486,33 @@ export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate,
         }));
       });
  
-      let hasWarnedAboutBinaryFrames = false;
- 
       socket.addEventListener('message', (event) => {
         try {
-          if (typeof event.data === 'string') {
-            const parsed = JSON.parse(event.data);
-            if (parsed.feeds) {
-              for (const [key, feed] of Object.entries(parsed.feeds)) {
-                const internalKey = resolveInternalSymbolKey(key);
-                if (internalKey && feed.ff?.ltpc?.ltp) {
-                  onQuoteUpdate?.(internalKey, normalizeQuotePayload(feed.ff.ltpc));
-                }
-              }
-            }
-          } else if (!hasWarnedAboutBinaryFrames) {
-            // KNOWN LIMITATION: Upstox's V3 feed sends binary Protobuf frames (Blob/ArrayBuffer),
-            // not JSON text. Decoding these requires bundling protobufjs + Upstox's official
-            // MarketDataFeed.proto schema, which isn't implemented yet - so live ticks arriving
-            // here are currently dropped on purpose (not a crash, just a no-op) until that's added.
-            // Prices still refresh via the REST poll in marketEngine.js in the meantime.
-            hasWarnedAboutBinaryFrames = true;
-            console.info('[Upstox V3] Receiving binary Protobuf frames - decoding not yet implemented, relying on REST poll instead.');
+          // Upstox V3 sends every message (market_info, initial_feed, live_feed) as
+          // binary Protobuf per their official schema - never as JSON text.
+          if (!(event.data instanceof ArrayBuffer)) return;
+ 
+          const FeedResponseType = getFeedResponseType();
+          const decodedMessage = FeedResponseType.decode(new Uint8Array(event.data));
+          const feedsMap = decodedMessage.feeds || {};
+ 
+          for (const [instrumentKeyFromFeed, feedEntry] of Object.entries(feedsMap)) {
+            const internalKey = resolveInternalSymbolKey(instrumentKeyFromFeed);
+            if (!internalKey) continue;
+ 
+            // We subscribed with mode: 'ltpc', so feedEntry.ltpc is what's populated
+            // (the schema's 'oneof FeedUnion' - fullFeed/firstLevelWithGreeks would be
+            // populated instead if a different subscription mode were used).
+            const ltpcData = feedEntry.ltpc;
+            if (!ltpcData || ltpcData.ltp == null) continue;
+ 
+            onQuoteUpdate?.(internalKey, normalizeLtpcPayload({ ltp: ltpcData.ltp, cp: ltpcData.cp }));
           }
         } catch (err) {
           onError(err);
         }
       });
+ 
  
       socket.addEventListener('error', (err) => {
         console.warn('[Upstox V3 WS Error]:', err);

@@ -192,21 +192,44 @@ class MarketDataEngine {
           const recordTarget = this.quotesStore.get(symbolKey);
           if (!recordTarget || !updatePayload.price) continue;
  
+          // BUG FIX: the old logic always overwrote the SAME last candle forever,
+          // no matter how much real time passed - so the chart froze after the
+          // initial fetch even though prices kept updating. Now, if the current
+          // moment has moved into a NEW minute-bucket since the last candle's
+          // timestamp, we push a fresh candle instead of squashing everything
+          // into one bar. This is what makes the chart actually advance over time.
           const updatedCandles = (() => {
-          if (!recordTarget.candles || recordTarget.candles.length === 0) return recordTarget.candles;
-          const lastCandle = recordTarget.candles[recordTarget.candles.length - 1];
-          const updatedClose = roundToTwoPlaces(updatePayload.price);
-          return [
-            ...recordTarget.candles.slice(0, -1),
-            {
-              ...lastCandle,
-              close: updatedClose,
-              high: roundToTwoPlaces(Math.max(lastCandle.high, updatedClose)),
-              low: roundToTwoPlaces(Math.min(lastCandle.low, updatedClose)),
-              volume: lastCandle.volume + Math.floor(Math.random() * 1200),
+            if (!recordTarget.candles || recordTarget.candles.length === 0) return recordTarget.candles;
+            const lastCandle = recordTarget.candles[recordTarget.candles.length - 1];
+            const updatedClose = roundToTwoPlaces(updatePayload.price);
+            const nowBucketStart = Math.floor(Date.now() / 60000) * 60000;
+            const lastCandleBucketStart = Math.floor(lastCandle.time / 60000) * 60000;
+ 
+            if (nowBucketStart > lastCandleBucketStart) {
+              // A new minute has started since the last candle - append a new bar.
+              const freshCandle = {
+                time: nowBucketStart,
+                open: lastCandle.close,
+                high: updatedClose,
+                low: updatedClose,
+                close: updatedClose,
+                volume: Math.floor(Math.random() * 500) + 100,
+              };
+              return [...recordTarget.candles, freshCandle].slice(-375); // cap at one session's worth of 1-min candles
             }
-          ];
-        })();
+ 
+            // Still within the same minute - update the existing last candle in place.
+            return [
+              ...recordTarget.candles.slice(0, -1),
+              {
+                ...lastCandle,
+                close: updatedClose,
+                high: roundToTwoPlaces(Math.max(lastCandle.high, updatedClose)),
+                low: roundToTwoPlaces(Math.min(lastCandle.low, updatedClose)),
+                volume: lastCandle.volume + Math.floor(Math.random() * 1200),
+              }
+            ];
+          })();
  
         this.quotesStore.set(symbolKey, {
             ...recordTarget,
@@ -273,6 +296,21 @@ class MarketDataEngine {
         const updatedCandles = (() => {
           if (!currentRecord.candles || currentRecord.candles.length === 0) return currentRecord.candles;
           const lastCandle = currentRecord.candles[currentRecord.candles.length - 1];
+          const nowBucketStart = Math.floor(Date.now() / 60000) * 60000;
+          const lastCandleBucketStart = Math.floor(lastCandle.time / 60000) * 60000;
+ 
+          if (nowBucketStart > lastCandleBucketStart) {
+            const freshCandle = {
+              time: nowBucketStart,
+              open: lastCandle.close,
+              high: updatedPrice,
+              low: updatedPrice,
+              close: updatedPrice,
+              volume: Math.floor(Math.random() * 500) + 100,
+            };
+            return [...currentRecord.candles, freshCandle].slice(-375);
+          }
+ 
           return [
             ...currentRecord.candles.slice(0, -1),
             {
