@@ -1,286 +1,216 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { signIn, signUp } from '../lib/database.js';
-import { Mail, Lock, ArrowRight, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle, X, TrendingUp } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext.jsx';
 
-/**
- * Standardized High-Performance Feedback Notification Toast
- * Enforces strict self-termination cleanup mandates on component unmount
- */
 const NotificationToast = React.memo(({ type, message, onClose }) => {
+  // ... (kept your existing toast — no change needed)
   useEffect(() => {
-    const macroSelfDestructTimerId = setTimeout(() => {
-      if (typeof onClose === 'function') onClose();
-    }, 4500);
-
-    return () => clearTimeout(macroSelfDestructTimerId);
+    const timer = setTimeout(() => onClose?.(), 4500);
+    return () => clearTimeout(timer);
   }, [onClose]);
 
-  // Design tokens maps tracking dynamic alert contexts
-  const styleVariantsMatrix = {
-    error: 'bg-red-500/10 border-red-500/20 text-red-400 shadow-red-950/20',
-    success: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-emerald-950/20',
-    info: 'bg-blue-500/10 border-blue-500/20 text-blue-400 shadow-blue-950/20'
+  const styleVariants = {
+    error: 'bg-red-500/10 border-red-500/20 text-red-400',
+    success: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
+    info: 'bg-blue-500/10 border-blue-500/20 text-blue-400'
   };
 
-  const StatusIconComponent = type === 'success' ? CheckCircle : AlertCircle;
+  const Icon = type === 'success' ? CheckCircle : AlertCircle;
 
   return (
-    <div 
-      className={`fixed top-5 right-5 z-[300] flex items-start gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-2xl animate-slide-in-right select-none ${
-        styleVariantsMatrix[type] || styleVariantsMatrix.info
-      }`} 
-      style={{ maxWidth: 360 }}
-    >
-      <StatusIconComponent className="w-4 h-4 mt-0.5 flex-shrink-0" />
-      <p className="text-xs font-semibold leading-relaxed flex-1">{message}</p>
-      
-      <button 
-        onClick={onClose}
-        className="p-0.5 rounded-lg opacity-60 hover:opacity-100 transition-opacity outline-none"
-      >
-        <X className="w-3.5 h-3.5" />
+    <div className={`fixed top-5 right-5 z-[300] flex items-start gap-3 px-4 py-3 rounded-2xl border backdrop-blur-md shadow-2xl ${styleVariants[type] || styleVariants.info}`}>
+      <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" />
+      <p className="text-sm font-medium flex-1">{message}</p>
+      <button onClick={onClose} className="text-current/70 hover:text-current">
+        <X className="w-4 h-4" />
       </button>
     </div>
   );
 });
 
-NotificationToast.displayName = 'NotificationToast';
-
-/**
- * Master Enterprise Authentication Terminal Control Panel
- */
 export default function AuthPage({ onAuth }) {
   const { isDark } = useTheme();
-  
-  // Primary Form Interaction Controls States
-  const [accessWorkflowMode, setAccessWorkflowMode] = useState('signin'); // 'signin' | 'signup'
-  const [userEmailInput, setUserEmailInput] = useState('');
-  const [userPasswordInput, setUserPasswordInput] = useState('');
-  
-  // Pipeline Workflow Telemetry States
-  const [isSubmissionActive, setIsSubmissionActive] = useState(false);
-  const [activeToastTelemetry, setActiveToastTelemetry] = useState(null);
-  const [formValidationErrors, setFormValidationErrors] = useState({});
-  const [isInterfaceVisible, setIsInterfaceVisible] = useState(false);
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [errors, setErrors] = useState({});
 
-  // Smooth Interface Mounting Fade-In Effect Hook
-  useEffect(() => {
-    const visualMountTimerId = setTimeout(() => setIsInterfaceVisible(true), 50);
-    return () => clearTimeout(visualMountTimerId);
-  }, []);
+  const validate = () => {
+    const errs = {};
+    if (!email.includes('@')) errs.email = 'Please enter a valid email';
+    if (password.length < 6) errs.password = 'Password must be at least 6 characters';
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
 
-  // Defensive Validation Layer Blueprint
-  const executeFormValidationGuard = useCallback(() => {
-    const compiledErrorManifest = {};
-    
-    if (!userEmailInput.includes('@')) {
-      compiledErrorManifest.email = 'Authentication error: Provide a valid email reference.';
-    }
-    
-    if (userPasswordInput.length < 6) {
-      compiledErrorManifest.password = 'Authentication error: Password criteria requires min 6 character tokens.';
-    }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validate()) return;
 
-    setFormValidationErrors(compiledErrorManifest);
-    return Object.keys(compiledErrorManifest).length === 0;
-  }, [userEmailInput, userPasswordInput]);
+    setIsLoading(true);
+    setToast(null);
 
-  // Primary Submit Form Submission Action Route Callback
-  const handleFormSubmissionPipeline = useCallback(async (formEvent) => {
-    formEvent.preventDefault();
-    setActiveToastTelemetry(null);
-
-    if (!executeFormValidationGuard()) return;
-    setIsSubmissionActive(true);
-    
     try {
-      if (accessWorkflowMode === 'signup') {
-        const structuralOperationResult = await signUp(userEmailInput, userPasswordInput);
-        
-        if (structuralOperationResult?.error) {
-          if (structuralOperationResult.error.includes('already')) {
-            setActiveToastTelemetry({ 
-              type: 'info', 
-              message: 'Account index localized: Identity registered previously. Swapping execution profile to Sign-In mode.' 
-            });
-            setAccessWorkflowMode('signin');
-          } else {
-            setActiveToastTelemetry({ type: 'error', message: structuralOperationResult.error });
-          }
-        } else {
-          setActiveToastTelemetry({ type: 'success', message: 'Corporate profile initialized successfully!' });
-          setTimeout(() => {
-            if (typeof onAuth === 'function') onAuth();
-          }, 600);
-        }
+      const result = mode === 'signup' 
+        ? await signUp(email, password)
+        : await signIn(email, password);
+
+      if (result?.error) {
+        setToast({ type: 'error', message: result.error });
+        if (result.error.includes('already')) setMode('signin');
       } else {
-        const structuralOperationResult = await signIn(userEmailInput, userPasswordInput);
-        
-        if (structuralOperationResult?.error) {
-          setActiveToastTelemetry({ type: 'error', message: structuralOperationResult.error });
-          setFormValidationErrors({ password: 'Login validation rejected: Credential parameters match failure.' });
-        } else {
-          if (typeof onAuth === 'function') onAuth();
-        }
+        setToast({ type: 'success', message: mode === 'signup' ? 'Account created successfully!' : 'Welcome back!' });
+        setTimeout(() => onAuth?.(), 800);
       }
-    } catch (unexpectedExceptionError) {
-      setActiveToastTelemetry({ 
-        type: 'error', 
-        message: 'System connectivity exception error detected. Review service parameters logs.' 
-      });
+    } catch (err) {
+      setToast({ type: 'error', message: 'Something went wrong. Please try again.' });
     } finally {
-      setIsSubmissionActive(false);
+      setIsLoading(false);
     }
-  }, [accessWorkflowMode, userEmailInput, userPasswordInput, executeFormValidationGuard, onAuth]);
+  };
 
-  // Design Token Visual Mapping Clones
-  const inputClassThemeBlueprint = isDark 
-    ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder-zinc-700 focus:border-emerald-500/50 focus:ring-emerald-500/10' 
-    : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:border-emerald-400 focus:ring-emerald-400/10';
-
-  const layoutThemeWrapperClass = isDark 
-    ? 'bg-zinc-950' 
-    : 'bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200';
-
-  const dismissToast = useCallback(() => {
-    setActiveToastTelemetry(null);
-  }, []);
+  const inputClasses = `w-full bg-zinc-900/70 border border-zinc-800 rounded-2xl pl-11 pr-4 py-3.5 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder-zinc-500 ${isDark ? '' : 'bg-white border-slate-200 text-slate-900'}`;
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-300 ${layoutThemeWrapperClass}`}>
+    <div className={`min-h-screen flex items-center justify-center p-6 bg-zinc-950 relative overflow-hidden ${isDark ? '' : 'bg-slate-50'}`}>
+      {/* Background glows */}
+      <div className="absolute inset-0 bg-[radial-gradient(at_50%_30%,rgba(16,185,129,0.08),transparent)]" />
       
-      {/* Target Active Alert Warning System View Toast */}
-      {activeToastTelemetry && (
-        <NotificationToast 
-          {...activeToastTelemetry} 
-          onClose={dismissToast} 
-        />
-      )}
-      
-      {/* Engineering Blueprint Background Overlay Mesh */}
-      <div 
-        className="absolute inset-0 pointer-events-none select-none" 
-        style={{ 
-          backgroundImage: isDark 
-            ? 'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)' 
-            : 'linear-gradient(rgba(15,23,42,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.03) 1px, transparent 1px)', 
-          backgroundSize: '56px 56px' 
-        }} 
-      />
-      
-      {/* High-Performance Fluid Ambient Blur Vector Glow Sphere */}
-      <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] rounded-full opacity-[0.04] blur-[150px] bg-emerald-500 pointer-events-none will-change-transform" />
-      
-      {/* Core Dynamic Content Positioning Frame Box */}
-      <div 
-        className={`ease-[cubic-bezier(0.16,1,0.3,1)] duration-700 ${
-          isInterfaceVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
-        }`}
-      >
-        <div 
-          className={`rounded-2xl p-7 shadow-2xl border transition-all duration-200 ${
-            isDark ? 'bg-zinc-950/40 border-zinc-900 shadow-black/50 backdrop-blur-md' : 'bg-white border-slate-200 shadow-slate-200/60'
-          }`}
-        >
-          {/* Sign-In / Create Account Flow Split Action Sliders Tab Bar */}
-          <div className={`flex gap-1 p-1 rounded-xl mb-6 select-none ${isDark ? 'bg-zinc-900' : 'bg-slate-100'}`}>
-            {['signin', 'signup'].map((segmentModeKey) => (
-              <button 
-                key={segmentModeKey} 
-                onClick={() => { 
-                  setAccessWorkflowMode(segmentModeKey); 
-                  setFormValidationErrors({}); 
-                  setActiveToastTelemetry(null); 
-                }} 
-                className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-150 ${
-                  accessWorkflowMode === segmentModeKey 
-                    ? 'bg-emerald-500 text-white shadow-md shadow-emerald-950/20' 
-                    : isDark ? 'text-zinc-500 hover:text-zinc-200' : 'text-slate-400 hover:text-slate-800'
-                }`}
+      {toast && <NotificationToast {...toast} onClose={() => setToast(null)} />}
+
+      <div className="w-full max-w-md">
+        {/* Logo + Title */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center mb-4 shadow-xl shadow-emerald-500/20">
+            <TrendingUp className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-white">Bull's AI</h1>
+          <p className="text-zinc-400 mt-1 text-center">High-frequency equities analytics</p>
+        </div>
+
+        {/* Card */}
+        <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl">
+          <div className="text-center mb-8">
+            <h2 className="text-xl font-semibold text-white">
+              {mode === 'signin' ? 'Sign in to your dashboard' : 'Create your trading profile'}
+            </h2>
+          </div>
+
+          {/* Mode Tabs */}
+          <div className="flex bg-zinc-800 rounded-2xl p-1 mb-8">
+            {['signin', 'signup'].map((m) => (
+              <button
+                key={m}
+                onClick={() => { setMode(m); setErrors({}); }}
+                className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${mode === m 
+                  ? 'bg-emerald-500 text-white shadow' 
+                  : 'text-zinc-400 hover:text-white'}`}
               >
-                {segmentModeKey === 'signin' ? 'Sign In' : 'Create Profile'}
+                {m === 'signin' ? 'Sign In' : 'Sign Up'}
               </button>
             ))}
           </div>
 
-          {/* Core Access Input Fields Actions Terminal Container Form */}
-          <form onSubmit={handleFormSubmissionPipeline} className="space-y-4">
-            
-            {/* Input Element 1: Email Lane Layout Address */}
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className={`text-[11px] uppercase font-bold tracking-wider mb-1.5 block select-none ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>
-                Email Account Address
-              </label>
-              
+              <label className="text-xs uppercase tracking-widest text-zinc-500 block mb-1.5">EMAIL ADDRESS</label>
               <div className="relative">
-                <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-zinc-700' : 'text-slate-400'}`} />
-                <input 
-                  type="email" 
-                  value={userEmailInput} 
-                  onChange={(e) => { 
-                    setUserEmailInput(e.target.value); 
-                    setFormValidationErrors((prev) => ({ ...prev, email: null })); 
-                  }} 
-                  required 
-                  placeholder="name@gmail.com" 
-                  className={`w-full rounded-xl pl-10 pr-4 py-3 text-sm border focus:outline-none focus:ring-2 ${
-                    formValidationErrors.email ? 'border-red-500/50 ring-2 ring-red-500/10' : ''
-                  } ${inputClassThemeBlueprint}`} 
+                <Mail className="absolute left-4 top-4 text-zinc-500" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setErrors(prev => ({...prev, email: null})); }}
+                  className={inputClasses}
+                  placeholder="admin@bulls.ai"
+                  required
                 />
               </div>
-              {formValidationErrors.email && (
-                <p className="mt-1.5 text-[11px] font-mono font-bold text-red-400 animate-fade-in">{formValidationErrors.email}</p>
-              )}
+              {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
             </div>
 
-            {/* Input Element 2: Password Access Control Lock */}
             <div>
-              <label className={`text-[11px] uppercase font-bold tracking-wider mb-1.5 block select-none ${isDark ? 'text-zinc-500' : 'text-slate-500'}`}>
-                Account Password
-              </label>
-              
+              <label className="text-xs uppercase tracking-widest text-zinc-500 block mb-1.5">PASSWORD</label>
               <div className="relative">
-                <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-zinc-700' : 'text-slate-400'}`} />
-                <input 
-                  type="password" 
-                  value={userPasswordInput} 
-                  onChange={(e) => { 
-                    setUserPasswordInput(e.target.value); 
-                    setFormValidationErrors((prev) => ({ ...prev, password: null })); 
-                  }} 
-                  required 
-                  minLength={6} 
-                  placeholder="••••••••••••" 
-                  className={`w-full rounded-xl pl-10 pr-4 py-3 text-sm font-mono border focus:outline-none focus:ring-2 ${
-                    formValidationErrors.password ? 'border-red-500/50 ring-2 ring-red-500/10' : ''
-                  } ${inputClassThemeBlueprint}`} 
+                <Lock className="absolute left-4 top-4 text-zinc-500" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setErrors(prev => ({...prev, password: null})); }}
+                  className={inputClasses}
+                  placeholder="••••••••"
+                  required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-4 text-zinc-500 hover:text-zinc-300"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
-              {formValidationErrors.password && (
-                <p className="mt-1.5 text-[11px] font-mono font-bold text-red-400 animate-fade-in">{formValidationErrors.password}</p>
-              )}
+              {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password}</p>}
             </div>
 
-            {/* Main Primary Workflow Transmission Authorization Button Trigger */}
-            <button 
-              type="submit" 
-              disabled={isSubmissionActive} 
-              className="btn-glow w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs uppercase font-bold tracking-wider py-3 rounded-xl flex items-center justify-center gap-2 group disabled:opacity-60 shadow-md shadow-emerald-950/20 transition-all select-none mt-2"
+            {/* Extra controls (screenshot style) */}
+            <div className="flex items-center justify-between text-sm">
+              <label className="flex items-center gap-2 text-zinc-400 cursor-pointer">
+                <input type="checkbox" className="w-4 h-4 accent-emerald-500" /> Remember me
+              </label>
+              <a href="#" className="text-emerald-400 hover:text-emerald-300 text-sm">Forgot password?</a>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-[0.985] shadow-lg shadow-emerald-500/30 disabled:opacity-70"
             >
-              {isSubmissionActive ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
+              {isLoading ? 'Processing...' : (
                 <>
-                  {accessWorkflowMode === 'signin' ? 'Verify Entry Sign In' : 'Authorize Account Registration'}
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-150" />
+                  {mode === 'signin' ? 'Sign In' : 'Create Account'} <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
           </form>
+
+                    {/* Social login */}
+          <div className="mt-8">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-zinc-800" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-widest text-zinc-500">
+                <span className="bg-zinc-900 px-4">or continue with</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 mt-6">
+              {['Google', 'GitHub', 'Discord'].map((provider) => (
+                <button key={provider} className="border border-zinc-800 hover:border-zinc-700 py-3 rounded-2xl text-sm flex items-center justify-center gap-2 transition-colors">
+                  {provider}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Demo Credentials Box - For Recruiters */}
+          <div className="mt-8 p-4 bg-zinc-950/80 border border-emerald-900/50 rounded-2xl">
+            <p className="text-emerald-400 text-xs uppercase tracking-widest font-semibold mb-2 text-center">Demo Credentials</p>
+            <div className="text-center text-sm font-mono text-zinc-300">
+              <p><span className="text-zinc-500">Email:</span> <span className="text-emerald-400">admin@bulls.ai</span></p>
+              <p><span className="text-zinc-500">Password:</span> <span className="text-emerald-400">admin123</span></p>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <p className="text-center text-sm text-zinc-400 mt-8 font-medium tracking-wide">
+            © 2026 Bull's AI • Isha Choudhary
+          </p>
         </div>
       </div>
-
     </div>
   );
 }

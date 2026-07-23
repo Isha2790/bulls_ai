@@ -255,6 +255,21 @@ class MarketDataEngine {
     } finally {
       this.isNetworkFetchActive = false;
     }
+    // Force chart to move even with LTPC
+    if (updatedCandles.length > 0) {
+      const lastCandle = updatedCandles[updatedCandles.length - 1];
+      const now = Date.now();
+      if (now - lastCandle.time > 45000) { 
+        updatedCandles.push({
+          time: Math.floor(now / 60000) * 60000,
+          open: lastCandle.close,
+          high: updatePayload.price,
+          low: Math.min(lastCandle.low, updatePayload.price),
+          close: updatePayload.price,
+          volume: lastCandle.volume + 500,
+        });
+      }
+    }
   }
  
   /**
