@@ -4,15 +4,15 @@
  * Orchestrates real-time mathematical simulation matrix state fallbacks 
  * layered with robust asynchronous network loop gatekeeping.
  */
-
+ 
 import { STOCKS } from './stocks.js';
 import { fetchRealQuotes, fetchRealIndices, fetchCandles, subscribeToLiveMarketFeed } from './priceFetcher.js';
 import { checkIsMarketOpen } from './marketGuard.js';
-
+ 
 // Optimized numerical precision normalization functions
 const roundToTwoPlaces = (value) => Math.round(value * 100) / 100;
 const roundToFourPlaces = (value) => Math.round(value * 10000) / 10000;
-
+ 
 /**
  * Encapsulates currency conversion mapping following local formatting regulations.
  * @param {number} value 
@@ -26,7 +26,7 @@ export function fmtINR(value, decimalPlaces = 2) {
     maximumFractionDigits: decimalPlaces 
   });
 }
-
+ 
 class MarketDataEngine {
   constructor() {
     this.quotesStore = new Map();
@@ -45,10 +45,10 @@ class MarketDataEngine {
     this.isPipelineLive = false;
     this.isNetworkFetchActive = false; // Asynchronous race condition lock mechanism
     this.liveFeedCleanup = null;
-
+ 
     this._initializeEngineLayer();
   }
-
+ 
   /**
    * Bootstraps local seed allocations to minimize frame lag on cold boots.
    * @private
@@ -97,7 +97,7 @@ class MarketDataEngine {
       console.error("[Engine Initialization Failure]: Core setup crash.", bootstrapException);
     }
   }
-
+ 
   /**
    * Initiates the initial data load across active connections.
    * @private
@@ -110,14 +110,14 @@ class MarketDataEngine {
         fetchRealQuotes(symbolTokensRegistry),
         fetchRealIndices(),
       ]);
-
+ 
       if (realtimeQuotesResponse) {
         let activeLiveNodeCount = 0;
         
         for (const [symbolToken, metricsPayload] of Object.entries(realtimeQuotesResponse)) {
           const underlyingRecord = this.quotesStore.get(symbolToken);
           if (!underlyingRecord || !metricsPayload.price) continue;
-
+ 
           this.quotesStore.set(symbolToken, {
             ...underlyingRecord,
             price: roundToTwoPlaces(metricsPayload.price),
@@ -130,8 +130,8 @@ class MarketDataEngine {
             volume: metricsPayload.volume || underlyingRecord.volume,
             high52: roundToTwoPlaces(metricsPayload.fiftyTwoWeekHigh || underlyingRecord.high52),
             low52: roundToTwoPlaces(metricsPayload.fiftyTwoWeekLow || underlyingRecord.low52),
-            circuitUpper: roundToTwoPlaces((metricsPayload.prevClose || underlyingRecord.prevClose) * 1.20),
-            circuitLower: roundToTwoPlaces((metricsPayload.prevClose || underlyingRecord.prevClose) * 0.80),
+            circuitUpper: roundToTwoPlaces(metricsPayload.circuitUpper || (metricsPayload.prevClose || underlyingRecord.prevClose) * 1.20),
+            circuitLower: roundToTwoPlaces(metricsPayload.circuitLower || (metricsPayload.prevClose || underlyingRecord.prevClose) * 0.80),
             vwap: roundToTwoPlaces(metricsPayload.price * (1 + (Math.random() - 0.5) * 0.002)),
             avgTradedPrice: roundToTwoPlaces(metricsPayload.price * (1 + (Math.random() - 0.5) * 0.003)),
             bid: roundToTwoPlaces(metricsPayload.price - Math.random() * (metricsPayload.price * 0.0005 + 0.05)),
@@ -146,7 +146,7 @@ class MarketDataEngine {
       } else {
         this.isPipelineLive = true;
       }
-
+ 
       if (realtimeIndicesResponse) {
         for (const [indexKey, indexPayload] of Object.entries(realtimeIndicesResponse)) {
           if (indexPayload.value) {
@@ -159,25 +159,30 @@ class MarketDataEngine {
           }
         }
       }
-
+ 
       this._dispatchNotificationEvent();
       this._connectLiveFeed();
       this._asynchronouslyIngestHistoricalCandles();
     } catch (ingestionException) {
       console.warn("[Ingestion Exception]: Stream synchronization dropped temporarily.", ingestionException);
     }
-    this.networkFetchTimerReferenceId = setInterval(() => this._synchronizeRealtimeDataStreams(), 10000);
+    // NOTE: Upstox's V3 WebSocket feed sends binary Protobuf frames, which this app does not
+    // currently decode (see the `message` handler in priceFetcher.js) - so live tick-by-tick
+    // updates never actually reach the UI even though the socket connects successfully. Until
+    // Protobuf decoding is added, this REST poll is the only thing actually refreshing prices,
+    // so it's intentionally set faster than a "nice-to-have" cadence would normally need.
+    this.networkFetchTimerReferenceId = setInterval(() => this._synchronizeRealtimeDataStreams(), 3000);
   }
-
+ 
   /**
    * Refreshes real-time metrics while applying concurrency safety locks.
    * @private
    */
   async _synchronizeRealtimeDataStreams() {
-
+ 
     if (this.isNetworkFetchActive) return; 
     this.isNetworkFetchActive = true;
-
+ 
     const stockSymbolMatrixTokens = STOCKS.map((asset) => asset.symbol);
     try {
       const updatedQuotesMatrix = await fetchRealQuotes(stockSymbolMatrixTokens);
@@ -186,7 +191,7 @@ class MarketDataEngine {
         for (const [symbolKey, updatePayload] of Object.entries(updatedQuotesMatrix)) {
           const recordTarget = this.quotesStore.get(symbolKey);
           if (!recordTarget || !updatePayload.price) continue;
-
+ 
           const updatedCandles = (() => {
           if (!recordTarget.candles || recordTarget.candles.length === 0) return recordTarget.candles;
           const lastCandle = recordTarget.candles[recordTarget.candles.length - 1];
@@ -202,7 +207,7 @@ class MarketDataEngine {
             }
           ];
         })();
-
+ 
         this.quotesStore.set(symbolKey, {
             ...recordTarget,
             price: roundToTwoPlaces(updatePayload.price),
@@ -228,7 +233,7 @@ class MarketDataEngine {
       this.isNetworkFetchActive = false;
     }
   }
-
+ 
   /**
    * Asynchronously updates historical data blocks across elements.
    * @private
@@ -253,17 +258,17 @@ class MarketDataEngine {
     }
     this._dispatchNotificationEvent();
   }
-
+ 
   _connectLiveFeed() {
     if (this.liveFeedCleanup) return;
-
+ 
     const symbolTokensRegistry = STOCKS.map((asset) => asset.symbol);
     this.liveFeedCleanup = subscribeToLiveMarketFeed(
       symbolTokensRegistry,
       (symbolKey, quoteUpdate) => {
         const currentRecord = this.quotesStore.get(symbolKey);
         if (!currentRecord) return;
-
+ 
         const updatedPrice = roundToTwoPlaces(quoteUpdate.price ?? currentRecord.price);
         const updatedCandles = (() => {
           if (!currentRecord.candles || currentRecord.candles.length === 0) return currentRecord.candles;
@@ -279,7 +284,7 @@ class MarketDataEngine {
             }
           ];
         })();
-
+ 
         const nextQuote = {
           ...currentRecord,
           price: updatedPrice,
@@ -297,7 +302,7 @@ class MarketDataEngine {
           lastUpdate: Date.now(),
           isLive: true,
         };
-
+ 
         this.quotesStore.set(symbolKey, nextQuote);
         this.isPipelineLive = true;
         this._dispatchNotificationEvent();
@@ -305,7 +310,7 @@ class MarketDataEngine {
       (indexKey, indexUpdate) => {
         const currentIndex = this.indicesStore[indexKey];
         if (!currentIndex) return;
-
+ 
         this.indicesStore[indexKey] = {
           ...currentIndex,
           value: roundToTwoPlaces(indexUpdate.value ?? currentIndex.value),
@@ -320,13 +325,13 @@ class MarketDataEngine {
       }
     );
   }
-
+ 
   _initializeStaticIndices() {
     this.indicesStore.NIFTY50  = { name: 'NIFTY 50',   value: 24227.35, prevClose: 24207.10, change: 20.25,  changePercent: 0.08 };
     this.indicesStore.SENSEX   = { name: 'SENSEX',      value: 77692.13, prevClose: 77569.39, change: 122.74, changePercent: 0.16 };
     this.indicesStore.INDIAVIX = { name: 'INDIA VIX',   value: 13.35,    prevClose: 12.24,    change: 1.11,   changePercent: 9.07 };
   }
-
+ 
   _generateSeedDepth(basePrice) {
     const buyBidsArray = [], sellAsksArray = [];
     for (let index = 0; index < 5; index++) {
@@ -336,7 +341,7 @@ class MarketDataEngine {
     }
     return { bids: buyBidsArray, asks: sellAsksArray };
   }
-
+ 
   _generateSeedCandles(baselineAnchorPrice, sampleCapacityCount) {
     const candlesHistoricalLedger = [];
     let processingPriceTrack = baselineAnchorPrice * (1 + (Math.random() - 0.5) * 0.02);
@@ -362,7 +367,7 @@ class MarketDataEngine {
     }
     return candlesHistoricalLedger;
   }
-
+ 
   _tickIndicesSimulationFlow() {
     if (this.isPipelineLive) return;
     for (const structuralIndexToken of ['NIFTY50', 'SENSEX', 'INDIAVIX']) {
@@ -377,7 +382,7 @@ class MarketDataEngine {
       targetingIndexRecord.changePercent = roundToFourPlaces((targetingIndexRecord.change / targetingIndexRecord.prevClose) * 100);
     }
   }
-
+ 
   /**
    * Internal high-frequency ticker loop running every second.
    * Uses an in-place array modification strategy to optimize memory usage.
@@ -386,10 +391,10 @@ class MarketDataEngine {
   _executeEngineTickCycle() {
     // CRITICAL ENFORCEMENT: Guard high-frequency random walk data generators against off-hour sessions
     if (!checkIsMarketOpen()) return;
-
+ 
     this.simulatedTickCycleCounter++;
     this._tickIndicesSimulationFlow();
-
+ 
     for (const [tickerToken, existingQuotePayload] of this.quotesStore) {
       if (existingQuotePayload.isLive) continue; 
       
@@ -402,7 +407,7 @@ class MarketDataEngine {
       const terminalComputedHigh  = roundToTwoPlaces(Math.max(trailingCandleIndexNode.high, terminalComputedClose));
       const terminalComputedLow   = roundToTwoPlaces(Math.min(trailingCandleIndexNode.low, terminalComputedClose));
       const terminalComputedVolume = trailingCandleIndexNode.volume + Math.floor(Math.random() * 500);
-
+ 
       const updatedCandle = {
         ...trailingCandleIndexNode,
         close: terminalComputedClose,
@@ -410,7 +415,7 @@ class MarketDataEngine {
         low: terminalComputedLow,
         volume: terminalComputedVolume,
       };
-
+ 
       const updatedCandles = this.simulatedTickCycleCounter % 20 === 0
         ? [
             ...referenceCandlesLane,
@@ -427,11 +432,11 @@ class MarketDataEngine {
             ...referenceCandlesLane.slice(0, -1),
             updatedCandle
           ];
-
+ 
       const activeComputedChange = roundToTwoPlaces(terminalComputedClose - existingQuotePayload.prevClose);
       const advancedRunningVwap = roundToTwoPlaces(existingQuotePayload.vwap * 0.999 + terminalComputedClose * 0.001);
       const advancedRunningAvgTP = roundToTwoPlaces(existingQuotePayload.avgTradedPrice * 0.998 + terminalComputedClose * 0.002);
-
+ 
       this.quotesStore.set(tickerToken, {
         ...existingQuotePayload,
         price: terminalComputedClose,
@@ -450,7 +455,7 @@ class MarketDataEngine {
       });
     }
   }
-
+ 
   _mutateDepthMetrics(priorDepthObject, currentSpotPrice) {
     const updatedBidsMapping = priorDepthObject.bids.map((bidItem, index) => {
       const deltaSpreadOffset = currentSpotPrice * 0.0002 * (index + 1);
@@ -464,7 +469,7 @@ class MarketDataEngine {
     
     return { bids: updatedBidsMapping, asks: updatedAsksMapping };
   }
-
+ 
   /**
    * Broadcasts snapshots to all active channel listeners.
    * @private
@@ -476,14 +481,14 @@ class MarketDataEngine {
     this.quoteSubscribers.forEach((callbackFunction) => callbackFunction(assetQuotesSnapshot));
     this.indexSubscribers.forEach((callbackFunction) => callbackFunction(indicesSnapshot));
   }
-
+ 
   start() {
     if (this.tickTimerReferenceId) return;
     this.tickTimerReferenceId = setInterval(() => this._executeEngineTickCycle(), 1000);
     this.notificationTimerReferenceId = setInterval(() => this._dispatchNotificationEvent(), 1000);
     this._dispatchNotificationEvent();
   }
-
+ 
   stop() {
     if (this.tickTimerReferenceId) { clearInterval(this.tickTimerReferenceId); this.tickTimerReferenceId = null; }
     if (this.notificationTimerReferenceId) { clearInterval(this.notificationTimerReferenceId); this.notificationTimerReferenceId = null; }
@@ -491,7 +496,7 @@ class MarketDataEngine {
     if (this.liveFeedCleanup) { this.liveFeedCleanup(); this.liveFeedCleanup = null; }
     this.isPipelineLive = false;
   }
-
+ 
   subscribe(callbackFn) {
     this.quoteSubscribers.add(callbackFn);
     callbackFn(new Map(this.quotesStore));
@@ -504,7 +509,7 @@ class MarketDataEngine {
       }
     };
   }
-
+ 
   subscribeIndices(callbackFn) {
     this.indexSubscribers.add(callbackFn);
     callbackFn({ ...this.indicesStore });

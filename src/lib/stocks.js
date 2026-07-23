@@ -14,7 +14,7 @@ export const STOCKS = Object.freeze([
   { symbol: 'MARUTI', name: 'Maruti Suzuki', sector: 'Automobile', basePrice: 12680.50 },
   { symbol: 'ASIANPAINT', name: 'Asian Paints', sector: 'Consumer Goods', basePrice: 2915.80 },
   { symbol: 'WIPRO', name: 'Wipro Limited', sector: 'IT', basePrice: 545.60 },
-  { symbol: 'TATAMOTORS', name: 'Tata Motors', sector: 'Automobile', basePrice: 985.40 },
+  { symbol: 'TATAMOTORS', name: 'Tata Motors', sector: 'Automobile', basePrice: 415.00 },
   { symbol: 'SUNPHARMA', name: 'Sun Pharmaceutical', sector: 'Pharmaceuticals', basePrice: 1720.30 },
   { symbol: 'TITAN', name: 'Titan Company', sector: 'Consumer Goods', basePrice: 3385.70 },
   { symbol: 'ULTRACEMCO', name: 'UltraTech Cement', sector: 'Materials', basePrice: 11450.20 },
@@ -30,7 +30,7 @@ export const STOCKS = Object.freeze([
   { symbol: 'TECHM', name: 'Tech Mahindra', sector: 'IT', basePrice: 1665.40 },
   { symbol: 'HEROMOTOCO', name: 'Hero MotoCorp', sector: 'Automobile', basePrice: 5320.40 }
 ]);
-
+ 
 export const SECTORS = Object.freeze(
   [...new Set(STOCKS.map((asset) => asset.sector))].sort()
 );

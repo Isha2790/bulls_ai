@@ -46,16 +46,28 @@ let resolveInFlight = null;
  
 function normalizeQuotePayload(rawPayload) {
   const price = rawPayload.last_price ?? rawPayload.lastPrice ?? rawPayload.ltp ?? rawPayload.price ?? rawPayload.close ?? 0;
-  const prevClose = rawPayload.previous_close ?? rawPayload.prevClose ?? rawPayload.prev_close ?? 0;
-  const open = rawPayload.open ?? 0;
-  const high = rawPayload.high ?? 0;
-  const low = rawPayload.low ?? 0;
+ 
+  // IMPORTANT: Upstox's real quote response nests OHLC under an `ohlc` object
+  // (rawPayload.ohlc.open / .high / .low / .close) - it does NOT put open/high/low
+  // at the top level. Reading rawPayload.open directly (as before) always returned
+  // undefined and silently defaulted to 0.
+  const ohlc = rawPayload.ohlc || {};
+  const open = ohlc.open ?? rawPayload.open ?? 0;
+  const high = ohlc.high ?? rawPayload.high ?? 0;
+  const low = ohlc.low ?? rawPayload.low ?? 0;
+ 
+  // IMPORTANT: Upstox's real quote response has NO `previous_close`/`change`/`change_percent`
+  // fields at all. What it actually sends is `net_change` (price change vs. previous close).
+  // There's also no direct previous-close value, so we derive it: prevClose = price - net_change.
+  // (Falling back to explicit field names too, in case a different Upstox endpoint/version sends them.)
+  const explicitPrevClose = rawPayload.previous_close ?? rawPayload.prevClose ?? rawPayload.prev_close;
+  const netChange = rawPayload.net_change ?? rawPayload.change ?? 0;
+  const prevClose = explicitPrevClose ?? (Number(price) - Number(netChange));
+ 
   const volume = rawPayload.volume ?? 0;
-  const change = rawPayload.change ?? ((Number(price) || 0) - (Number(prevClose) || 0));
-  const computedChangePercent = Number(prevClose)
-    ? ((Number(price) - Number(prevClose)) / Number(prevClose)) * 100
-    : 0;
-  const changePercent = rawPayload.change_percent ?? rawPayload.percent_change ?? rawPayload.changePercent ?? computedChangePercent;
+  const change = Number(netChange) || (Number(price) - Number(prevClose));
+  const changePercent = rawPayload.change_percent ?? rawPayload.percent_change ?? rawPayload.changePercent ??
+    (Number(prevClose) ? (change / Number(prevClose)) * 100 : 0);
  
   return {
     price: Number(price) || 0,
@@ -68,6 +80,8 @@ function normalizeQuotePayload(rawPayload) {
     changePercent: Number(changePercent) || 0,
     fiftyTwoWeekHigh: rawPayload['52_week_high'] ?? rawPayload.fiftyTwoWeekHigh ?? 0,
     fiftyTwoWeekLow: rawPayload['52_week_low'] ?? rawPayload.fiftyTwoWeekLow ?? 0,
+    circuitUpper: rawPayload.upper_circuit_limit ?? 0,
+    circuitLower: rawPayload.lower_circuit_limit ?? 0,
   };
 }
  
@@ -314,6 +328,8 @@ export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate,
         }));
       });
  
+      let hasWarnedAboutBinaryFrames = false;
+ 
       socket.addEventListener('message', (event) => {
         try {
           if (typeof event.data === 'string') {
@@ -326,6 +342,14 @@ export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate,
                 }
               }
             }
+          } else if (!hasWarnedAboutBinaryFrames) {
+            // KNOWN LIMITATION: Upstox's V3 feed sends binary Protobuf frames (Blob/ArrayBuffer),
+            // not JSON text. Decoding these requires bundling protobufjs + Upstox's official
+            // MarketDataFeed.proto schema, which isn't implemented yet - so live ticks arriving
+            // here are currently dropped on purpose (not a crash, just a no-op) until that's added.
+            // Prices still refresh via the REST poll in marketEngine.js in the meantime.
+            hasWarnedAboutBinaryFrames = true;
+            console.info('[Upstox V3] Receiving binary Protobuf frames - decoding not yet implemented, relying on REST poll instead.');
           }
         } catch (err) {
           onError(err);
