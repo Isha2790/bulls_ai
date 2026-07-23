@@ -30,7 +30,62 @@ I selected this modern stack to ensure fast compilation, modular components, and
 * **Serverless Compute:** `TypeScript Edge Functions` (Handling seamless backend cloud integrations)
 * **Hosting & CI/CD:** `Vercel` (Configured with production and preview environment pipelines)
 
----
+## Project Architecture
+```
+├── src/
+│   ├── components/            
+│   │   ├── AIAssistant.jsx    # Real-time AI assistant chat
+│   │   ├── AddFunds.jsx       # Paper trading wallet funding modal
+│   │   ├── AuthPage.jsx       # Authentication page
+│   │   ├── BrokerConnect.jsx  # Upstox API key connection UI
+│   │   ├── CandlestickChart.jsx # Interactive intraday chart renderer
+│   │   ├── GlobalSearch.jsx   # Equity search & quick navigation
+│   │   ├── IndexBar.jsx       # Benchmark indices ticker tape (NIFTY/SENSEX)
+│   │   ├── MarketDashboard.jsx # Core market table & telemetry cards
+│   │   ├── MarketDepth.jsx    # 5-level order book bid/ask visualization
+│   │   ├── MarketHeatmap.jsx  # NIFTY 50 capital heatmap matrix
+│   │   ├── MiniSparkline.jsx  # SVG sparkline chart component
+│   │   ├── PortfolioView.jsx  # Paper portfolio holdings & P&L tracker
+│   │   ├── SEBIDisclaimer.jsx # Regulatory disclaimer component
+│   │   ├── SplashScreen.jsx  # App initial bootloader UI
+│   │   ├── StockDetail.jsx    # Individual stock detail modal view
+│   │   ├── TickerTape.jsx     # Live streaming tick marquee bar
+│   │   ├── TopMovers.jsx      # Top session gainers & decliners widget
+│   │   └── TradeHistory.jsx   # Executed order log & ledger history
+│   ├── context/               
+│   │   ├── ThemeContext.jsx          # Dark/light UI mode state manager
+│   │   └── TradingModeContext.jsx    # Paper trading vs. live mode toggle
+│   ├── hooks/                 
+│   │   ├── useISTClock.js            # Live Indian Standard Time sync hook
+│   │   └── useLiveQuotes.js          # Live price tick subscription hook
+│   ├── lib/                   
+│   │   ├── database.js        # Supabase client & persistence utilities
+│   │   ├── knowledgeBase.js   # Embedded market concepts & knowledge embeddings
+│   │   ├── marketEngine.js    # Custom event-driven high-frequency state engine
+│   │   ├── marketGuard.js     # NSE market hours & session status validator
+│   │   ├── priceFetcher.js    # Upstox V3 WebSocket & V2 REST feed handlers
+│   │   ├── ragGenerator.js    # AI response generation pipeline
+│   │   ├── ragRetriever.js    # Context vector retrieval engine
+│   │   └── stocks.js          # Default market instruments & token registry
+│   ├── app.jsx                # Root application layout & routing view
+│   ├── index.css              # Global styles & Tailwind directives
+│   └── main.jsx               # React DOM entry point
+├── supabase/                  
+│   ├── functions/
+│   │   ├── ai-chat/           # Serverless edge function for AI assistant
+│   │   │   └── index.ts
+│   │   └── upstox-proxy/      # Edge proxy for Upstox OAuth & API headers
+│   │       └── index.ts
+│   └── migrations/
+│       └── stock_trading_schema.sql # Database schema & tables setup
+├── .gitignore                 # Git ignored files & environments
+├── index.html                 # Main HTML entry file
+├── package.json               # Node dependencies & scripts
+├── postcss.config.js          # PostCSS configuration for Tailwind
+├── README.md                  # Project documentation & overview
+├── tailwind.config.js         # Tailwind CSS styling configuration
+└── vite.config.js             # Vite bundler configuration
+```
 
 ## 🚀 Running the Project Locally
 
