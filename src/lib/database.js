@@ -3,6 +3,12 @@
  * Emulates a structural transactional relational database cluster leveraging LocalStorage.
  * Engineered with cryptographic interface simulations and safe array mutation boundaries.
  */
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 const STORAGE_KEYS = Object.freeze({
   USERS: 'sp_users',
@@ -128,6 +134,12 @@ export async function signIn(email, password) {
 
 export function signOut() { 
   localStorage.removeItem(STORAGE_KEYS.SESSION); 
+}
+
+export async function signInWithOAuth(provider) {
+  const { error } = await supabase.auth.signInWithOAuth({ provider });
+  if (error) return { error: error.message };
+  return { error: null };
 }
 
 export function getPortfolio(userId) {

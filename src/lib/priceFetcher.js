@@ -308,7 +308,7 @@ async function ensureSymbolsResolved() {
  
     if (Object.keys(map).length === 0) {
       console.warn('[priceFetcher] symbol resolution returned an empty map - will retry on next call instead of caching this.');
-      return {}; // do NOT persist to resolvedSymbolMap or localStorage - let the next call retry
+      return {}; 
     }
  
     resolvedSymbolMap = map;
@@ -475,21 +475,24 @@ export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate,
       }
  
       socket = new window.WebSocket(authorizedWsUri);
-      socket.binaryType = 'arraybuffer'; // Upstox V3 always sends binary Protobuf frames - without this the browser delivers a Blob, which can't be decoded synchronously here.
+      socket.binaryType = 'arraybuffer';
  
       socket.addEventListener('open', () => {
-        console.log('[Upstox V3] WebSocket connected successfully!');
+        console.log('[Upstox V3] WebSocket connected successfully! (FULL mode)');
         socket.send(JSON.stringify({
           guid: 'bulls_ai_session',
           method: 'sub',
-          data: { mode: 'ltpc', instrumentKeys },
+          data: { 
+            mode: 'full',            // NOTE: valid values to SEND are ltpc | option_greeks | full | full_d30.
+                                      // 'full_d5' is NOT one of them - that name only appears internally
+                                      // as an enum label when decoding the requestMode field in responses.
+            instrumentKeys 
+          },
         }));
       });
  
       socket.addEventListener('message', (event) => {
         try {
-          // Upstox V3 sends every message (market_info, initial_feed, live_feed) as
-          // binary Protobuf per their official schema - never as JSON text.
           if (!(event.data instanceof ArrayBuffer)) return;
  
           const FeedResponseType = getFeedResponseType();
@@ -500,19 +503,29 @@ export function subscribeToLiveMarketFeed(symbols, onQuoteUpdate, onIndexUpdate,
             const internalKey = resolveInternalSymbolKey(instrumentKeyFromFeed);
             if (!internalKey) continue;
  
-            // We subscribed with mode: 'ltpc', so feedEntry.ltpc is what's populated
-            // (the schema's 'oneof FeedUnion' - fullFeed/firstLevelWithGreeks would be
-            // populated instead if a different subscription mode were used).
-            const ltpcData = feedEntry.ltpc;
-            if (!ltpcData || ltpcData.ltp == null) continue;
+            let ltpcData = null;
  
-            onQuoteUpdate?.(internalKey, normalizeLtpcPayload({ ltp: ltpcData.ltp, cp: ltpcData.cp }));
+            // Handle FULL mode structure
+            if (feedEntry.fullFeed?.marketFF?.ltpc) {
+              ltpcData = feedEntry.fullFeed.marketFF.ltpc;
+            } else if (feedEntry.ltpc) {
+              ltpcData = feedEntry.ltpc;
+            } else if (feedEntry.firstLevelWithGreeks?.ltpc) {
+              ltpcData = feedEntry.firstLevelWithGreeks.ltpc;
+            }
+ 
+            if (ltpcData && ltpcData.ltp != null) {
+              onQuoteUpdate?.(internalKey, normalizeLtpcPayload({ 
+                ltp: ltpcData.ltp, 
+                cp: ltpcData.cp 
+              }));
+            }
           }
         } catch (err) {
+          console.warn('[WebSocket message parse error]', err);
           onError(err);
         }
       });
- 
  
       socket.addEventListener('error', (err) => {
         console.warn('[Upstox V3 WS Error]:', err);

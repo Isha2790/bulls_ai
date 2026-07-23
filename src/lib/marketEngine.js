@@ -179,10 +179,9 @@ class MarketDataEngine {
    * @private
    */
   async _synchronizeRealtimeDataStreams() {
- 
     if (this.isNetworkFetchActive) return; 
     this.isNetworkFetchActive = true;
- 
+    
     const stockSymbolMatrixTokens = STOCKS.map((asset) => asset.symbol);
     try {
       const updatedQuotesMatrix = await fetchRealQuotes(stockSymbolMatrixTokens);
@@ -192,12 +191,6 @@ class MarketDataEngine {
           const recordTarget = this.quotesStore.get(symbolKey);
           if (!recordTarget || !updatePayload.price) continue;
  
-          // BUG FIX: the old logic always overwrote the SAME last candle forever,
-          // no matter how much real time passed - so the chart froze after the
-          // initial fetch even though prices kept updating. Now, if the current
-          // moment has moved into a NEW minute-bucket since the last candle's
-          // timestamp, we push a fresh candle instead of squashing everything
-          // into one bar. This is what makes the chart actually advance over time.
           const updatedCandles = (() => {
             if (!recordTarget.candles || recordTarget.candles.length === 0) return recordTarget.candles;
             const lastCandle = recordTarget.candles[recordTarget.candles.length - 1];
@@ -254,21 +247,6 @@ class MarketDataEngine {
       console.warn("[Background Sync Exception]: Stream pipeline unresolved.", syncException);
     } finally {
       this.isNetworkFetchActive = false;
-    }
-    // Force chart to move even with LTPC
-    if (updatedCandles.length > 0) {
-      const lastCandle = updatedCandles[updatedCandles.length - 1];
-      const now = Date.now();
-      if (now - lastCandle.time > 45000) { 
-        updatedCandles.push({
-          time: Math.floor(now / 60000) * 60000,
-          open: lastCandle.close,
-          high: updatePayload.price,
-          low: Math.min(lastCandle.low, updatePayload.price),
-          close: updatePayload.price,
-          volume: lastCandle.volume + 500,
-        });
-      }
     }
   }
  
